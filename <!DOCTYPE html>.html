@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CampGuard AI</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        :root { --bg: #1a1a1a; --card: #2d2d2d; --accent: #ff4757; --text: #ffffff; }
+        body { font-family: sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+        .container { width: 100%; max-width: 400px; padding: 20px; box-sizing: border-box; }
+        .header { text-align: center; padding: 10px 0; }
+        .search-box { display: flex; gap: 10px; margin-bottom: 20px; }
+        input { flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--card); color: white; outline: none; width: 50%; }
+        button { padding: 12px 20px; border-radius: 8px; border: none; background: var(--accent); color: white; font-weight: bold; cursor: pointer; white-space: nowrap; }
+        
+        .gauge-container { position: relative; background: var(--card); border-radius: 20px; padding: 20px; text-align: center; margin-bottom: 20px; min-height: 220px; }
+        /* グラフの土台サイズを固定 */
+        .chart-box { position: relative; height: 180px; width: 100%; }
+        
+        .score-label { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); text-align: center; width: 100%; }
+        .score-number { font-size: 3.5rem; font-weight: bold; display: block; line-height: 1; margin-bottom: 5px; }
+        .score-unit { font-size: 0.8rem; color: #888; letter-spacing: 2px; }
+        
+        .result-card { background: var(--card); border-radius: 20px; padding: 20px; line-height: 1.6; animation: fadeIn 0.5s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; margin-bottom: 10px; font-weight: bold; }
+        .danger { background: #ff4757; color: white; }
+        .warning { background: #ffa502; color: white; }
+        .safe { background: #2ed573; color: white; }
+        .plan-b { border-top: 1px solid #444; margin-top: 15px; padding-top: 15px; color: #1e90ff; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>CampGuard AI</h1>
+        <p style="color: #888; font-size: 0.8rem;">リアルタイム危険指数コンサル</p>
+    </div>
+
+    <div class="search-box">
+        <input type="text" id="locationInput" placeholder="場所を入力" value="小倉橋">
+        <button onclick="diagnose()">診断</button>
+    </div>
+
+    <div class="gauge-container">
+        <div class="chart-box">
+            <canvas id="gaugeChart"></canvas>
+        </div>
+        <div class="score-label">
+            <span id="scoreValue" class="score-number">--</span>
+            <span class="score-unit">RISK LEVEL</span>
+        </div>
+    </div>
+
+    <div id="resultArea" class="result-card" style="display: none;">
+        <div id="statusBadge" class="badge">分析完了</div>
+        <div id="message"></div>
+        <div id="planB" class="plan-b"></div>
+    </div>
+</div>
+
+<script>
+    let myChart;
+    const gasUrl = "https://script.google.com/macros/s/AKfycbyqDTFt6HyyWfDLJJTkB2hQfSik9oJJfmIJBsRZ4U_kacbxYjlE2lB759s7scGMhaHx/exec";
+
+    function initChart() {
+        const ctx = document.getElementById('gaugeChart');
+        if (!ctx) return;
+        
+        myChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                datasets: [{
+                    data: [30, 40, 30],
+                    backgroundColor: ['rgba(46, 213, 115, 0.1)', 'rgba(255, 165, 2, 0.1)', 'rgba(255, 71, 87, 0.1)'],
+                    borderWidth: 0,
+                    circumference: 180,
+                    rotation: 270,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '85%',
+                plugins: { legend: { display: false }, tooltip: { enabled: false } }
+            }
+        });
+    }
+
+    async function diagnose() {
+        const location = document.getElementById('locationInput').value;
+        const resultArea = document.getElementById('resultArea');
+        const scoreDisp = document.getElementById('scoreValue');
+        
+        if (!location) return;
+        scoreDisp.innerText = "調査中";
+
+        try {
+            const response = await fetch(`${gasUrl}?place=${encodeURIComponent(location)}`);
+            const data = await response.json();
+            updateGaugeVisual(data.score);
+            displayResult(data);
+            resultArea.style.display = 'block';
+        } catch (error) {
+            scoreDisp.innerText = "ERR";
+        }
+    }
+
+    function updateGaugeVisual(score) {
+        document.getElementById('scoreValue').innerText = score;
+        if (!myChart) return;
+
+        const colors = myChart.data.datasets[0].backgroundColor;
+        colors[0] = score < 40 ? '#2ed573' : 'rgba(46, 213, 115, 0.1)';
+        colors[1] = (score >= 40 && score < 70) ? '#ffa502' : 'rgba(255, 165, 2, 0.1)';
+        colors[2] = score >= 70 ? '#ff4757' : 'rgba(255, 71, 87, 0.1)';
+        
+        myChart.update();
+    }
+
+    function displayResult(data) {
+        const badge = document.getElementById('statusBadge');
+        const msg = document.getElementById('message');
+        const pb = document.getElementById('planB');
+
+        if(data.score >= 70) {
+            badge.className = "badge danger";
+            badge.innerText = "DANGER";
+        } else if(data.score >= 40) {
+            badge.className = "badge warning";
+            badge.innerText = "WARNING";
+        } else {
+            badge.className = "badge safe";
+            badge.innerText = "SAFE";
+        }
+        
+        msg.innerHTML = `<strong>ベテランの分析：</strong><br>${data.advice}<br><small>(風速: ${data.windSpeed}m/s | 報告数: ${data.snsReports}件)</small>`;
+        pb.innerHTML = data.score >= 40 ? `💡 <strong>プランB：</strong><br>無理は禁物。早めの撤収か移動を。` : "";
+    }
+
+    // ページ読み込み完了後に初期化
+    window.addEventListener('load', initChart);
+</script>
+</body>
+</html>
